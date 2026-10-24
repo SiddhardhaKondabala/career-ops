@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "career-ops/schemas/approved-jobs.v1.schema.json",
+  "title": "Approved Jobs Queue (v1)",
+  "description": "Queue of career-ops-approved jobs handed to an execution engine such as the LinkedIn bot. This is personal data and is never committed to a tracked path.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "generated_at", "min_score", "executor", "jobs"],
+  "properties": {
+    "schema": { "const": "approved-jobs.v1" },
+    "generated_at": { "type": "string" },
+    "min_score": { "type": "number", "minimum": 1, "maximum": 5 },
+    "executor": { "type": "string", "enum": ["linkedin"] },
+    "jobs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "integration_id",
+          "canonical_url",
+          "company",
+          "role",
+          "career_ops_score",
+          "evaluation_confidence",
+          "report_number",
+          "report_path",
+          "resume_path",
+          "cover_letter_path",
+          "source",
+          "application_status",
+          "created_at"
+        ],
+        "properties": {
+          "integration_id": { "type": "string" },
+          "canonical_url": { "type": "string" },
+          "company": { "type": "string" },
+          "role": { "type": "string" },
+          "career_ops_score": { "type": "number", "minimum": 1, "maximum": 5 },
+          "evaluation_confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+          "report_number": { "type": ["integer", "string"] },
+          "report_path": { "type": "string" },
+          "resume_path": { "type": "string" },
+          "cover_letter_path": { "type": ["string", "null"] },
+          "source": { "type": "string" },
+          "application_status": { "type": "string" },
+          "created_at": { "type": "string" },
+          "provider": { "type": ["string", "null"] },
+          "requisition_id": { "type": ["string", "null"] },
+          "external_job_id": { "type": ["string", "null"] },
+          "normalized_company": { "type": ["string", "null"] },
+          "normalized_role": { "type": ["string", "null"] },
+          "location": { "type": ["string", "null"] },
+          "posted_at": { "type": ["string", "null"] },
+          "resume_sha256": { "type": ["string", "null"] },
+          "cover_letter_sha256": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}
