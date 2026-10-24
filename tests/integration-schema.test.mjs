@@ -20,6 +20,7 @@ import {
   validateApplicationResult,
   assertApprovedJobs,
   assertApplicationResult,
+  assertSupportedSchema,
   IntegrationSchemaError,
 } from '../lib/integration-schema.mjs';
 
@@ -179,4 +180,58 @@ test('assertApplicationResult rejects a missing required field', () => {
   const bad = validResult();
   delete bad.manual_action_required;
   assert.throws(() => assertApplicationResult(bad), IntegrationSchemaError);
+});
+
+// --- Contract hardening: timestamps and the keyword guard ---
+
+test('an empty queue timestamp is rejected', () => {
+  const r = validateApprovedJobs({ ...validQueue(), generated_at: '' });
+  assert.equal(r.valid, false);
+  assert.ok(r.errors.some((e) => e.includes('generated_at')));
+});
+
+test('a malformed queue timestamp is rejected', () => {
+  const r = validateApprovedJobs({ ...validQueue(), generated_at: '2026-10-24 12:00' });
+  assert.equal(r.valid, false);
+  assert.ok(r.errors.some((e) => e.includes('generated_at')));
+});
+
+test('a malformed job created_at is rejected', () => {
+  const r = validateApprovedJobs(validQueue([validJob({ created_at: 'yesterday' })]));
+  assert.equal(r.valid, false);
+  assert.ok(r.errors.some((e) => e.includes('created_at')));
+});
+
+test('a malformed result timestamp is rejected', () => {
+  const r = validateApplicationResult(validResult({ started_at: '' }));
+  assert.equal(r.valid, false);
+  assert.ok(r.errors.some((e) => e.includes('started_at')));
+});
+
+test('a timestamp with a UTC offset is accepted', () => {
+  assert.equal(validateApprovedJobs({ ...validQueue(), generated_at: '2026-10-24T12:00:00+05:30' }).valid, true);
+  assert.equal(validateApplicationResult(validResult({ started_at: '2026-10-24T12:00:00.123Z' })).valid, true);
+});
+
+test('assertSupportedSchema throws on a keyword the validator does not implement', () => {
+  const schema = { type: 'object', properties: { x: { type: 'string', uniqueItems: true } } };
+  assert.throws(
+    () => assertSupportedSchema(schema),
+    (e) => e instanceof IntegrationSchemaError && /uniqueItems/.test(e.message),
+  );
+});
+
+test('assertSupportedSchema accepts the implemented subset', () => {
+  const schema = {
+    type: 'object',
+    required: ['a'],
+    additionalProperties: false,
+    properties: {
+      a: { type: 'string', minLength: 1, pattern: '^x' },
+      b: { type: 'array', items: { type: 'number', minimum: 0, maximum: 9 } },
+      c: { const: 'k' },
+      d: { enum: ['p', 'q', null] },
+    },
+  };
+  assert.doesNotThrow(() => assertSupportedSchema(schema));
 });

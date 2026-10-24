@@ -8,7 +8,7 @@
   "required": ["schema", "generated_at", "min_score", "executor", "jobs"],
   "properties": {
     "schema": { "const": "approved-jobs.v1" },
-    "generated_at": { "type": "string" },
+    "generated_at": { "type": "string", "minLength": 20, "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$" },
     "min_score": { "type": "number", "minimum": 1, "maximum": 5 },
     "executor": { "type": "string", "enum": ["linkedin"] },
     "jobs": {
@@ -44,7 +44,7 @@
           "cover_letter_path": { "type": ["string", "null"] },
           "source": { "type": "string" },
           "application_status": { "type": "string" },
-          "created_at": { "type": "string" },
+          "created_at": { "type": "string", "minLength": 20, "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$" },
           "provider": { "type": ["string", "null"] },
           "requisition_id": { "type": ["string", "null"] },
           "external_job_id": { "type": ["string", "null"] },
