@@ -21,6 +21,7 @@ import {
   buildQueue,
   parseReport,
   dateToIso,
+  runExport,
 } from '../export-approved-jobs.mjs';
 import { assertApprovedJobs } from '../lib/integration-schema.mjs';
 
@@ -145,6 +146,27 @@ test('ordering is deterministic regardless of input order', () => {
   assert.deepEqual(order1, order2);
   // Best score first.
   assert.equal(order1[0], 'https://www.linkedin.com/jobs/view/222');
+});
+
+test('a row with no date is excluded (keeps created_at stable)', () => {
+  assert.equal(exclusionReason(jobRecord({ date: '' }), OPTS), 'missing_date');
+  assert.equal(exclusionReason(jobRecord({ date: 'N/A' }), OPTS), 'missing_date');
+});
+
+test('a row that would build an invalid job is skipped, not fatal', () => {
+  // Score 5.5 passes the >=4.0 gate but violates the schema max (5); the row is
+  // dropped with reason invalid_job and the rest of the export still succeeds.
+  const good = jobRecord();
+  const bad = jobRecord({ url: 'https://www.linkedin.com/jobs/view/999', score: 5.5 });
+  const { approved, skipped } = selectApprovedJobs([bad, good], OPTS);
+  assert.equal(approved.length, 1);
+  assert.equal(approved[0].canonical_url, 'https://www.linkedin.com/jobs/view/4012345678');
+  assert.equal(skipped.filter((s) => s.reason === 'invalid_job').length, 1);
+});
+
+test('runExport rejects an unsupported source and a non-numeric min-score', async () => {
+  await assert.rejects(runExport(['--source', 'indeed', '--dry-run']), /unsupported --source/);
+  await assert.rejects(runExport(['--min-score', 'abc', '--dry-run']), /min-score must be a number/);
 });
 
 test('the produced queue validates against approved-jobs.v1', () => {

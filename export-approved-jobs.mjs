@@ -25,7 +25,10 @@
  *   - the URL is a valid LinkedIn posting (for --source linkedin)
  *   - the tailored resume passed its CV fact check
  *   - a tailored resume PDF exists
+ *   - has a tracker date (so created_at is stable across runs)
  *
+ * Each built job is validated against approved-jobs.v1 individually; a row that
+ * would produce an invalid job is skipped rather than aborting the whole export.
  * Output is deterministically ordered and validated against approved-jobs.v1.
  * The queue is written idempotently: an unchanged queue is not rewritten.
  *
@@ -48,6 +51,15 @@ import {
   firstLinkTarget,
   extractReqNumber,
 } from './tracker-parse.mjs';
+import {
+  assertApprovedJobs,
+  validate,
+  APPROVED_JOBS_SCHEMA,
+  APPROVED_JOBS_SCHEMA_ID,
+} from './lib/integration-schema.mjs';
+import { canonicalUrl, integrationId, isValidLinkedInUrl } from './lib/integration-identity.mjs';
+import { flagValue, hasFlag } from './lib/cli-flags.mjs';
+import { isMainModule } from './lib/is-main-module.mjs';
 
 // These two helpers also live in tracker-utils.mjs, but importing that module
 // pulls in js-yaml (via lib/yaml-document.mjs). The exporter stays dependency-
@@ -70,10 +82,6 @@ function writeFileAtomic(path, content) {
   writeFileSync(tmp, content);
   renameSync(tmp, path);
 }
-import { assertApprovedJobs, APPROVED_JOBS_SCHEMA_ID } from './lib/integration-schema.mjs';
-import { canonicalUrl, integrationId, isValidLinkedInUrl } from './lib/integration-identity.mjs';
-import { flagValue, hasFlag } from './lib/cli-flags.mjs';
-import { isMainModule } from './lib/is-main-module.mjs';
 
 // --- vocabulary -------------------------------------------------------------
 
@@ -209,6 +217,7 @@ export function exclusionReason(job, { minScore, blacklistMatcher }) {
   if (!isValidLinkedInUrl(job.url)) return 'invalid_linkedin_url';
   if (job.resumeFactCheckFailed) return 'failed_cv_fact_check';
   if (!job.resumePath) return 'missing_resume';
+  if (!/^\d{4}-\d{2}-\d{2}/.test(String(job.date ?? '').trim())) return 'missing_date';
   return null;
 }
 
@@ -240,7 +249,6 @@ export function buildApprovedJob(job, { source, generatedAt }) {
     created_at: dateToIso(job.date, generatedAt),
   };
   if (job.requisitionId) approved.requisition_id = job.requisitionId;
-  if (!blank(job.via)) approved.provider = String(job.via).trim();
   return approved;
 }
 
@@ -262,6 +270,7 @@ export function dateToIso(date, fallbackIso) {
  * @param {{minScore: number, blacklistMatcher: Function, source: string, generatedAt: string}} options
  */
 export function selectApprovedJobs(jobs, { minScore, blacklistMatcher, source, generatedAt }) {
+  const jobSchema = APPROVED_JOBS_SCHEMA.properties.jobs.items;
   const approved = [];
   const skipped = [];
   const seenUrls = new Set();
@@ -274,6 +283,12 @@ export function selectApprovedJobs(jobs, { minScore, blacklistMatcher, source, g
       continue;
     }
     const built = buildApprovedJob(job, { source, generatedAt });
+    // A row that would produce an invalid job (e.g. a score outside 1–5) is
+    // skipped, so one bad row never aborts the whole export.
+    if (!validate(built, jobSchema).valid) {
+      skipped.push({ job, reason: 'invalid_job' });
+      continue;
+    }
     if (seenUrls.has(built.canonical_url)) {
       skipped.push({ job, reason: 'duplicate_url' });
       continue;
@@ -427,8 +442,8 @@ export async function defaultBlacklistMatcher() {
     const scan = await import('./scan.mjs');
     const blacklist = scan.loadBlacklist();
     return (company, url) => scan.findBlacklistEntry(blacklist, company, url);
-  } catch {
-    // No blacklist available (or scan.mjs unavailable): nothing is blacklisted.
+  } catch (err) {
+    console.error(`[export-approved-jobs] blacklist unavailable (${err.message}); proceeding with no blacklist`);
     return () => null;
   }
 }
@@ -442,6 +457,12 @@ export async function runExport(argv = process.argv.slice(2), { blacklistMatcher
   const dryRun = hasFlag(argv, '--dry-run');
   const generatedAt = (now ?? new Date()).toISOString();
 
+  if (source !== 'linkedin') {
+    throw new Error(`export-approved-jobs: unsupported --source "${source}" (only "linkedin" in v1)`);
+  }
+  if (!Number.isFinite(minScore)) {
+    throw new Error('export-approved-jobs: --min-score must be a number');
+  }
   if (!out && !dryRun) {
     throw new Error('export-approved-jobs: provide --out <path> or --dry-run');
   }
