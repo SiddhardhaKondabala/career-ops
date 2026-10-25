@@ -25,29 +25,41 @@ import { spawnSync } from 'child_process';
 
 import { resolveTrackerPath, getCareerOpsRoot } from './path-resolver.mjs';
 import { loadTrackerJobs } from './export-approved-jobs.mjs';
-import { assertApplicationResult } from './lib/integration-schema.mjs';
+import { validateApplicationResult } from './lib/integration-schema.mjs';
 import { buildRowIndex, planImports } from './lib/application-result-importer.mjs';
 import { flagValue, hasFlag } from './lib/cli-flags.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 
-/** Read + validate an application-result.v1 JSONL file. Throws on bad input. */
+/**
+ * Read + validate an application-result.v1 JSONL file. A malformed record (bad
+ * JSON or a schema violation) is SKIPPED with a reason, not fatal — one corrupt
+ * line must not block importing the rest. A missing file is still an error.
+ *
+ * @returns {{results: object[], skipped: {line: number, error: string}[]}}
+ */
 export function readResults(resultsPath) {
   if (!existsSync(resultsPath)) throw new Error(`results file not found: ${resultsPath}`);
-  const out = [];
+  const results = [];
+  const skipped = [];
   readFileSync(resultsPath, 'utf-8').split('\n').forEach((line, i) => {
     if (!line.trim()) return;
     let doc;
     try {
       doc = JSON.parse(line);
     } catch (e) {
-      throw new Error(`results line ${i + 1} is not valid JSON: ${e.message}`);
+      skipped.push({ line: i + 1, error: `invalid JSON: ${e.message}` });
+      return;
     }
-    assertApplicationResult(doc); // throws on a record that violates application-result.v1
-    out.push(doc);
+    const { valid, errors } = validateApplicationResult(doc);
+    if (!valid) {
+      skipped.push({ line: i + 1, error: errors.join('; ') });
+      return;
+    }
+    results.push(doc);
   });
-  return out;
+  return { results, skipped };
 }
 
 function defaultResultsPath() {
@@ -75,13 +87,20 @@ export async function runImport(argv = process.argv.slice(2), { applyFn } = {}) 
   }
 
   const trackerPath = resolveTrackerPath(getCareerOpsRoot());
-  const results = readResults(resultsPath);
+  const { results, skipped: malformed } = readResults(resultsPath);
+  for (const m of malformed) console.error(`[import] skipped malformed record (line ${m.line}): ${m.error}`);
   const jobs = loadTrackerJobs({ trackerPath });
   const index = buildRowIndex(jobs);
   const actions = planImports(results, index);
 
   const apply = applyFn ?? defaultApplyFn();
-  const counts = { apply: 0, refuse: 0, skip: 0, status_changed: 0, note_only: 0 };
+  const counts = { apply: 0, refuse: 0, skip: 0, status_changed: 0, note_only: 0, failed: 0, malformed: malformed.length };
+  // Track the latest status we have driven each row to WITHIN this run, so a
+  // later note-only result re-asserts the row's current status rather than the
+  // stale pre-import one — otherwise it would downgrade a status an earlier
+  // result in the same run already advanced (e.g. a later 'failed' undoing an
+  // earlier 'submitted' → Applied).
+  const latestStatus = new Map();
 
   for (const a of actions) {
     if (a.action === 'refuse') {
@@ -95,16 +114,31 @@ export async function runImport(argv = process.argv.slice(2), { applyFn } = {}) 
       continue;
     }
     counts.apply++;
-    const state = a.setStatus || a.currentStatus || 'Evaluated';
-    if (a.setStatus) counts.status_changed++;
-    else counts.note_only++;
-    if (!dryRun) await apply({ reportNumber: a.reportNumber, state, note: a.note });
+    const known = latestStatus.has(a.reportNumber) ? latestStatus.get(a.reportNumber) : a.currentStatus;
+    const state = a.setStatus || known || 'Evaluated';
+    if (a.setStatus) {
+      counts.status_changed++;
+      latestStatus.set(a.reportNumber, a.setStatus);
+    } else {
+      counts.note_only++;
+    }
+    if (!dryRun) {
+      // One set-status failure (e.g. a row that no longer resolves) must not
+      // block the remaining results.
+      try {
+        await apply({ reportNumber: a.reportNumber, state, note: a.note });
+      } catch (e) {
+        counts.failed++;
+        console.error(`[import] apply failed for report ${a.reportNumber}: ${e.message}`);
+      }
+    }
   }
 
   console.error(
     `[import] results=${results.length} applied=${counts.apply} ` +
       `(status→${counts.status_changed}, note-only=${counts.note_only}) ` +
-      `refused=${counts.refuse} skipped=${counts.skip}${dryRun ? '  (dry-run, nothing written)' : ''}`,
+      `refused=${counts.refuse} skipped=${counts.skip} failed=${counts.failed} malformed=${counts.malformed}` +
+      `${dryRun ? '  (dry-run, nothing written)' : ''}`,
   );
   return { actions, counts };
 }
