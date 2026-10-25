@@ -48,6 +48,7 @@
     "verify:portals": "node verify-portals.mjs",
     "tracker": "node tracker.mjs",
     "export:linkedin": "node export-approved-jobs.mjs --source linkedin --min-score 4.0 --out \"$CAREER_OPS_INTEGRATION_DIR/linkedin-approved.json\"",
+    "import:linkedin": "node import-application-results.mjs --results \"$CAREER_OPS_INTEGRATION_DIR/linkedin-results.jsonl\"",
     "find": "node find.mjs",
     "patterns": "node analyze-patterns.mjs",
     "keyword-match": "node keyword-match.mjs",
