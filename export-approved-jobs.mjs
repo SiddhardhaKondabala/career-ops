@@ -39,6 +39,7 @@
  * loaders around it. See docs/INTEGRATION_LINKEDIN.md.
  */
 
+import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import { dirname, isAbsolute, join, resolve } from 'path';
 
@@ -81,6 +82,22 @@ function writeFileAtomic(path, content) {
   const tmp = `${path}.tmp-${process.pid}`;
   writeFileSync(tmp, content);
   renameSync(tmp, path);
+}
+
+/**
+ * The SHA-256 of a file's bytes as a lowercase hex string, or null when the
+ * path is absent or unreadable. The bot recomputes this before upload, so the
+ * exact artifact career-ops approved is the one the executor sends, and a file
+ * swapped or regenerated between export and run is caught as an integrity
+ * mismatch rather than silently applied with.
+ */
+export function sha256File(path) {
+  if (!path || !existsSync(path)) return null;
+  try {
+    return createHash('sha256').update(readFileSync(path)).digest('hex');
+  } catch {
+    return null;
+  }
 }
 
 // --- vocabulary -------------------------------------------------------------
@@ -244,6 +261,8 @@ export function buildApprovedJob(job, { source, generatedAt }) {
     report_path: job.reportPath,
     resume_path: job.resumePath,
     cover_letter_path: job.coverLetterPath ?? null,
+    resume_sha256: job.resumeSha256 ?? null,
+    cover_letter_sha256: job.coverLetterSha256 ?? null,
     source,
     application_status: 'approved',
     created_at: dateToIso(job.date, generatedAt),
@@ -399,6 +418,9 @@ export function loadTrackerJobs({ trackerPath }) {
       ? parseReport(readFileSync(reportPath, 'utf-8'))
       : {};
 
+    const resumePath = pdfPathForExisting(pdfIndex, workspaceRoot, reportNumber, 'cv');
+    const coverLetterPath = pdfPathForExisting(pdfIndex, workspaceRoot, reportNumber, 'cover');
+
     jobs.push({
       reportNumber,
       reportPath: reportPath && existsSync(reportPath) ? reportPath : null,
@@ -414,8 +436,10 @@ export function loadTrackerJobs({ trackerPath }) {
       via: !blank(row.via) ? row.via : report.via ?? null,
       url: (!blank(row.url) ? row.url : null) ?? report.url ?? null,
       requisitionId: extractReqNumber(row.notes),
-      resumePath: pdfPathForExisting(pdfIndex, workspaceRoot, reportNumber, 'cv'),
-      coverLetterPath: pdfPathForExisting(pdfIndex, workspaceRoot, reportNumber, 'cover'),
+      resumePath,
+      coverLetterPath,
+      resumeSha256: sha256File(resumePath),
+      coverLetterSha256: sha256File(coverLetterPath),
       resumeFactCheckFailed: false,
     });
   }

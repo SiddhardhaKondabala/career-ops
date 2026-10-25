@@ -15,12 +15,15 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { createHash } from 'node:crypto';
 import {
   exclusionReason,
   selectApprovedJobs,
   buildQueue,
+  buildApprovedJob,
   parseReport,
   dateToIso,
+  sha256File,
   runExport,
 } from '../export-approved-jobs.mjs';
 import { assertApprovedJobs } from '../lib/integration-schema.mjs';
@@ -191,6 +194,31 @@ test('parseReport extracts URL and Machine Summary fields', () => {
   assert.deepEqual(r.hardStops, []);
 });
 
+test('buildApprovedJob carries the artifact hashes through (Phase 6)', () => {
+  const built = buildApprovedJob(
+    jobRecord({ resumeSha256: 'a'.repeat(64), coverLetterSha256: 'b'.repeat(64) }),
+    { source: 'linkedin', generatedAt: NOW },
+  );
+  assert.equal(built.resume_sha256, 'a'.repeat(64));
+  assert.equal(built.cover_letter_sha256, 'b'.repeat(64));
+});
+
+test('buildApprovedJob defaults missing hashes to null', () => {
+  const built = buildApprovedJob(jobRecord(), { source: 'linkedin', generatedAt: NOW });
+  assert.equal(built.resume_sha256, null);
+  assert.equal(built.cover_letter_sha256, null);
+});
+
+test('sha256File hashes a file and returns null for an absent path', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sha-'));
+  const f = join(dir, 'x.pdf');
+  writeFileSync(f, '%PDF-1.4 bytes');
+  const expected = createHash('sha256').update(readFileSync(f)).digest('hex');
+  assert.equal(sha256File(f), expected);
+  assert.equal(sha256File(join(dir, 'missing.pdf')), null);
+  assert.equal(sha256File(null), null);
+});
+
 test('dateToIso upgrades a date-only tracker value to an instant', () => {
   assert.equal(dateToIso('2026-06-20', NOW), '2026-06-20T00:00:00Z');
   assert.equal(dateToIso('', NOW), NOW);
@@ -280,6 +308,11 @@ test('CLI exports only approved jobs, validates, from an external data root', ()
   assert.equal(queue.jobs.length, 1);
   assert.equal(queue.jobs[0].canonical_url, 'https://www.linkedin.com/jobs/view/4012345678');
   assert.ok(queue.jobs[0].resume_path.endsWith('cv-001.pdf'));
+  // Phase 6: the queue carries the exact SHA-256 of the exported resume PDF.
+  const expectedSha = createHash('sha256')
+    .update(readFileSync(join(root, 'output', 'cv-001.pdf')))
+    .digest('hex');
+  assert.equal(queue.jobs[0].resume_sha256, expectedSha);
 });
 
 test('CLI dry-run writes nothing', () => {
