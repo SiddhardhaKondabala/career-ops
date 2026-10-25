@@ -76,6 +76,19 @@ test('buildNote is deterministic and "; "-free (idempotent note text)', () => {
   assert.ok(a.includes('run run-1'));
 });
 
+test('buildNote strips newlines/tabs/pipes so it cannot corrupt the tracker row', () => {
+  const note = buildNote(result({ error_code: 'E_NAV', error_message: 'line1\nline2 | piped\tTabbed' }));
+  assert.ok(!/[\r\n\t]/.test(note), 'no newlines/tabs');
+  assert.ok(!note.includes('|'), 'no pipe (markdown column separator)');
+  assert.ok(!note.includes('; '));
+});
+
+test('buildNote truncates a very long error_message', () => {
+  const note = buildNote(result({ error_code: 'E', error_message: 'x'.repeat(500) }));
+  assert.ok(note.length < 300);
+  assert.ok(note.endsWith('...'));
+});
+
 // --- matching ---
 
 const E1 = { reportNumber: 1, status: 'Evaluated', canonical_url: URL1, integration_id: 'linkedin:4012345678' };
@@ -231,6 +244,52 @@ test('localized / custom tracker columns still match', async () => {
   await runIn(root, ['--results', resultsPath], fn);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].state, 'Applied');
+});
+
+test('a later note-only result does not downgrade a status set earlier in the same run', async () => {
+  const { root, resultsPath } = makeWorkspace({
+    results: [
+      result({ executor_run_id: 'run-1', result: 'submitted' }),
+      result({ executor_run_id: 'run-2', result: 'failed', error_code: 'E_NAV', error_message: 'boom' }),
+    ],
+  });
+  const { fn, calls } = recorder();
+  await runIn(root, ['--results', resultsPath], fn);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].state, 'Applied'); // submitted → Applied
+  assert.equal(calls[1].state, 'Applied'); // later 'failed' must NOT downgrade to Evaluated
+});
+
+test('a malformed result record is skipped, valid ones still imported', async () => {
+  const { root, resultsPath } = makeWorkspace({ results: [result()] });
+  writeFileSync(
+    resultsPath,
+    [
+      JSON.stringify(result()), // valid
+      '{ not json', // malformed JSON
+      JSON.stringify({ ...result(), result: 'bogus' }), // schema-invalid
+    ].join('\n') + '\n',
+  );
+  const { fn, calls } = recorder();
+  const { counts } = await runIn(root, ['--results', resultsPath], fn);
+  assert.equal(calls.length, 1); // only the valid record applied
+  assert.equal(counts.malformed, 2);
+});
+
+test('one set-status failure does not abort the rest of the import', async () => {
+  const { root, resultsPath } = makeWorkspace({
+    results: [result({ executor_run_id: 'run-1' }), result({ executor_run_id: 'run-2' })],
+  });
+  const calls = [];
+  let n = 0;
+  const applyFn = async (a) => {
+    calls.push(a);
+    n += 1;
+    if (n === 1) throw new Error('set-status boom');
+  };
+  const { counts } = await runIn(root, ['--results', resultsPath], applyFn);
+  assert.equal(calls.length, 2); // both attempted despite the first failing
+  assert.equal(counts.failed, 1);
 });
 
 test('re-importing the same result is deterministic (idempotent note text)', async () => {
