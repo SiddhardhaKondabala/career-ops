@@ -51,7 +51,6 @@ import {
   parseMarkdownLinks,
   firstLinkTarget,
   extractReqNumber,
-  normalizeTextKey,
 } from './tracker-parse.mjs';
 import {
   assertApprovedJobs,
@@ -62,6 +61,7 @@ import {
 import { canonicalUrl, integrationId, isValidLinkedInUrl } from './lib/integration-identity.mjs';
 import { flagValue, hasFlag } from './lib/cli-flags.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
+import { parseBlacklist, findBlacklistEntry } from './lib/company-blacklist.mjs';
 
 // These two helpers also live in tracker-utils.mjs, but importing that module
 // pulls in js-yaml (via lib/yaml-document.mjs). The exporter stays dependency-
@@ -125,45 +125,12 @@ export function isVerifiedTier(tier) {
 
 // --- blacklist --------------------------------------------------------------
 
-/** Parse the user-owned data/blacklist.md without importing scan.mjs. */
-export function parseIntegrationBlacklist(text) {
-  const entries = new Map();
-  for (const line of String(text ?? '').replace(/\r/g, '').split('\n')) {
-    if (!line.trim().startsWith('|')) continue;
-    const cells = line.split('|').map((s) => s.trim());
-    const company = cells[1] || '';
-    if (!company || /^[-: ]+$/.test(company) || company.toLowerCase() === 'company') continue;
-    const scope = (cells[3] || 'company').toLowerCase() === 'domain' ? 'domain' : 'company';
-    const value = scope === 'domain'
-      ? company.toLowerCase().replace(/\.$/, '')
-      : normalizeTextKey(company);
-    const key = scope === 'domain' ? `domain:${value}` : value;
-    if (!value || entries.has(key)) continue;
-    entries.set(key, { company, since: cells[2] || '', scope, reason: cells[4] || '' });
-  }
-  return entries;
-}
+/** The exporter and scan.mjs intentionally share one dependency-free parser. */
+export const parseIntegrationBlacklist = parseBlacklist;
 
 /** Build the canonical company/domain matcher used by the approval gate. */
 export function integrationBlacklistMatcher(entries) {
-  return (company, url) => {
-    if (!entries || entries.size === 0) return null;
-    const companyEntry = entries.get(normalizeTextKey(company || ''));
-    if (companyEntry && companyEntry.scope !== 'domain') return companyEntry;
-
-    let hostname;
-    try {
-      hostname = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
-    } catch {
-      return null;
-    }
-    for (const entry of entries.values()) {
-      if (entry.scope !== 'domain') continue;
-      const suffix = entry.company.toLowerCase().replace(/\.$/, '');
-      if (suffix && (hostname === suffix || hostname.endsWith(`.${suffix}`))) return entry;
-    }
-    return null;
-  };
+  return (company, url) => findBlacklistEntry(entries, company, url);
 }
 
 // --- report parsing ---------------------------------------------------------

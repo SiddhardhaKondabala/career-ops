@@ -29,6 +29,7 @@ import {
   integrationBlacklistMatcher,
 } from '../export-approved-jobs.mjs';
 import { assertApprovedJobs } from '../lib/integration-schema.mjs';
+import { parseBlacklist, findBlacklistEntry } from '../lib/company-blacklist.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SCRIPT = join(ROOT, 'export-approved-jobs.mjs');
@@ -135,6 +136,30 @@ test('dependency-free blacklist parser enforces company and domain entries', () 
   const match = integrationBlacklistMatcher(entries);
   assert.equal(match('acme corp', 'https://example.com/jobs/1')?.reason, 'user decision');
   assert.equal(match('Other', 'https://www.linkedin.com/jobs/view/1')?.reason, 'blocked host');
+});
+
+test('export and scan blacklist gates share identical canonical semantics', () => {
+  const text = [
+    '| Company | Since | Scope | Reason |',
+    '|---|---|---|---|',
+    '| İSTANBUL Tekstil, Inc. | 2026-01-01 | company | company block |',
+    '| Example.COM. | 2026-01-02 | domain | domain block |',
+    '| ignored scope | 2026-01-03 | future-value | defaults to company |',
+  ].join('\n');
+  const canonical = parseBlacklist(text);
+  const integration = parseIntegrationBlacklist(text);
+  assert.deepEqual(integration, canonical);
+  assert.equal(parseIntegrationBlacklist, parseBlacklist);
+
+  const match = integrationBlacklistMatcher(integration);
+  for (const [company, url] of [
+    ['istanbul tekstil inc', 'https://jobs.example.test/1'],
+    ['Other', 'https://jobs.example.com/2'],
+    ['ignored scope', 'https://jobs.example.test/3'],
+    ['Allowed', 'https://notexample.com/4'],
+  ]) {
+    assert.deepEqual(match(company, url), findBlacklistEntry(canonical, company, url));
+  }
 });
 
 test('an invalid LinkedIn URL is excluded', () => {
