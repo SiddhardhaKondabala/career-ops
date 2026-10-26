@@ -51,6 +51,7 @@ import {
   parseMarkdownLinks,
   firstLinkTarget,
   extractReqNumber,
+  normalizeTextKey,
 } from './tracker-parse.mjs';
 import {
   assertApprovedJobs,
@@ -120,6 +121,49 @@ export const CONFIDENCE_OK = new Set(['medium', 'high']);
 export function isVerifiedTier(tier) {
   const t = String(tier ?? '').toLowerCase();
   return /\b(high|medium)\s+confidence\b/.test(t) || t === 'verified';
+}
+
+// --- blacklist --------------------------------------------------------------
+
+/** Parse the user-owned data/blacklist.md without importing scan.mjs. */
+export function parseIntegrationBlacklist(text) {
+  const entries = new Map();
+  for (const line of String(text ?? '').replace(/\r/g, '').split('\n')) {
+    if (!line.trim().startsWith('|')) continue;
+    const cells = line.split('|').map((s) => s.trim());
+    const company = cells[1] || '';
+    if (!company || /^[-: ]+$/.test(company) || company.toLowerCase() === 'company') continue;
+    const scope = (cells[3] || 'company').toLowerCase() === 'domain' ? 'domain' : 'company';
+    const value = scope === 'domain'
+      ? company.toLowerCase().replace(/\.$/, '')
+      : normalizeTextKey(company);
+    const key = scope === 'domain' ? `domain:${value}` : value;
+    if (!value || entries.has(key)) continue;
+    entries.set(key, { company, since: cells[2] || '', scope, reason: cells[4] || '' });
+  }
+  return entries;
+}
+
+/** Build the canonical company/domain matcher used by the approval gate. */
+export function integrationBlacklistMatcher(entries) {
+  return (company, url) => {
+    if (!entries || entries.size === 0) return null;
+    const companyEntry = entries.get(normalizeTextKey(company || ''));
+    if (companyEntry && companyEntry.scope !== 'domain') return companyEntry;
+
+    let hostname;
+    try {
+      hostname = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
+    } catch {
+      return null;
+    }
+    for (const entry of entries.values()) {
+      if (entry.scope !== 'domain') continue;
+      const suffix = entry.company.toLowerCase().replace(/\.$/, '');
+      if (suffix && (hostname === suffix || hostname.endsWith(`.${suffix}`))) return entry;
+    }
+    return null;
+  };
 }
 
 // --- report parsing ---------------------------------------------------------
@@ -225,7 +269,9 @@ export function exclusionReason(job, { minScore, blacklistMatcher }) {
   if (!(job.score >= minScore)) return 'low_score';
   if (!CONFIDENCE_OK.has(String(job.confidence ?? '').toLowerCase())) return 'low_confidence';
   if (!isVerifiedTier(job.legitimacyTier)) return 'unverified_posting';
-  if (job.finalDecision != null && String(job.finalDecision).toLowerCase() !== 'apply') {
+  // Missing is not approval. The report must positively say Apply; otherwise a
+  // partial/malformed Machine Summary could bypass the human decision gate.
+  if (String(job.finalDecision ?? '').trim().toLowerCase() !== 'apply') {
     return 'not_apply_decision';
   }
   if (Array.isArray(job.hardStops) && job.hardStops.length > 0) return 'hard_stop';
@@ -234,6 +280,8 @@ export function exclusionReason(job, { minScore, blacklistMatcher }) {
   if (!isValidLinkedInUrl(job.url)) return 'invalid_linkedin_url';
   if (job.resumeFactCheckFailed) return 'failed_cv_fact_check';
   if (!job.resumePath) return 'missing_resume';
+  if (!job.resumeSha256) return 'missing_resume_hash';
+  if (job.coverLetterPath && !job.coverLetterSha256) return 'missing_cover_letter_hash';
   if (!/^\d{4}-\d{2}-\d{2}/.test(String(job.date ?? '').trim())) return 'missing_date';
   return null;
 }
@@ -460,23 +508,27 @@ function reportNumberFrom(row, reportTarget) {
   return row.num;
 }
 
-/** Default blacklist matcher: the canonical scan.mjs rules, lazily imported. */
+/**
+ * Default blacklist matcher, loaded dependency-free from the active data root.
+ *
+ * Importing scan.mjs used to pull js-yaml into this otherwise dependency-free
+ * command. When that optional dependency was absent, the exporter logged a
+ * warning and proceeded with NO blacklist, silently defeating a safety gate.
+ * Reading the small markdown table directly keeps export dependency-free and
+ * makes read/permission failures fatal instead of fail-open.
+ */
 export async function defaultBlacklistMatcher() {
-  try {
-    const scan = await import('./scan.mjs');
-    const blacklist = scan.loadBlacklist();
-    return (company, url) => scan.findBlacklistEntry(blacklist, company, url);
-  } catch (err) {
-    console.error(`[export-approved-jobs] blacklist unavailable (${err.message}); proceeding with no blacklist`);
-    return () => null;
-  }
+  const blacklistPath = join(getCareerOpsRoot(), 'data', 'blacklist.md');
+  if (!existsSync(blacklistPath)) return () => null;
+  const blacklist = parseIntegrationBlacklist(readFileSync(blacklistPath, 'utf-8'));
+  return integrationBlacklistMatcher(blacklist);
 }
 
 // --- CLI --------------------------------------------------------------------
 
 export async function runExport(argv = process.argv.slice(2), { blacklistMatcher, now } = {}) {
   const source = flagValue(argv, '--source') || 'linkedin';
-  const minScore = parseFloat(flagValue(argv, '--min-score') ?? '4.0');
+  const minScore = Number(flagValue(argv, '--min-score') ?? '4.0');
   const out = flagValue(argv, '--out');
   const dryRun = hasFlag(argv, '--dry-run');
   const generatedAt = (now ?? new Date()).toISOString();

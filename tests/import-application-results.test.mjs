@@ -97,7 +97,9 @@ function indexOf(entries) {
   const byIntegrationId = new Map();
   const byCanonicalUrl = new Map();
   for (const e of entries) {
-    if (!byIntegrationId.has(e.integration_id)) byIntegrationId.set(e.integration_id, e);
+    const ids = byIntegrationId.get(e.integration_id) ?? [];
+    ids.push(e);
+    byIntegrationId.set(e.integration_id, ids);
     const l = byCanonicalUrl.get(e.canonical_url) ?? [];
     l.push(e);
     byCanonicalUrl.set(e.canonical_url, l);
@@ -121,6 +123,16 @@ test('refuses an ambiguous canonical-URL match', () => {
   const a = { reportNumber: 2, status: 'Evaluated', canonical_url: 'https://x.test/a', integration_id: 'ats:aaa' };
   const b = { reportNumber: 3, status: 'Evaluated', canonical_url: 'https://x.test/a', integration_id: 'ats:bbb' };
   const m = resolveMatch({ integration_id: 'ats:zzz', canonical_url: 'https://x.test/a' }, indexOf([a, b]));
+  assert.equal(m.status, 'ambiguous');
+  assert.equal(m.candidates.length, 2);
+});
+
+test('refuses duplicate tracker rows with the same integration id', () => {
+  const jobs = [
+    { reportNumber: 1, status: 'Evaluated', url: URL1, company: 'Acme', role: 'Staff Engineer' },
+    { reportNumber: 2, status: 'Evaluated', url: URL1, company: 'Acme', role: 'Staff Engineer' },
+  ];
+  const m = resolveMatch(result(), buildRowIndex(jobs));
   assert.equal(m.status, 'ambiguous');
   assert.equal(m.candidates.length, 2);
 });

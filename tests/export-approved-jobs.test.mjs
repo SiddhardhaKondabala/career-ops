@@ -25,6 +25,8 @@ import {
   dateToIso,
   sha256File,
   runExport,
+  parseIntegrationBlacklist,
+  integrationBlacklistMatcher,
 } from '../export-approved-jobs.mjs';
 import { assertApprovedJobs } from '../lib/integration-schema.mjs';
 
@@ -51,6 +53,8 @@ function jobRecord(overrides = {}) {
     requisitionId: null,
     resumePath: '/abs/resume.pdf',
     coverLetterPath: '/abs/cover.pdf',
+    resumeSha256: 'a'.repeat(64),
+    coverLetterSha256: 'b'.repeat(64),
     resumeFactCheckFailed: false,
     ...overrides,
   };
@@ -89,6 +93,11 @@ test('missing resume is excluded', () => {
   assert.equal(exclusionReason(jobRecord({ resumePath: null }), OPTS), 'missing_resume');
 });
 
+test('an unhashed artifact is excluded', () => {
+  assert.equal(exclusionReason(jobRecord({ resumeSha256: null }), OPTS), 'missing_resume_hash');
+  assert.equal(exclusionReason(jobRecord({ coverLetterSha256: null }), OPTS), 'missing_cover_letter_hash');
+});
+
 test('failed CV fact check is excluded', () => {
   assert.equal(exclusionReason(jobRecord({ resumeFactCheckFailed: true }), OPTS), 'failed_cv_fact_check');
 });
@@ -104,6 +113,7 @@ test('an unresolved agency gate is excluded', () => {
 
 test('a non-apply final decision is excluded', () => {
   assert.equal(exclusionReason(jobRecord({ finalDecision: 'Manual Review' }), OPTS), 'not_apply_decision');
+  assert.equal(exclusionReason(jobRecord({ finalDecision: null }), OPTS), 'not_apply_decision');
 });
 
 test('an unverified posting is excluded', () => {
@@ -113,6 +123,18 @@ test('an unverified posting is excluded', () => {
 test('a blacklisted company is excluded', () => {
   const opts = { ...OPTS, blacklistMatcher: () => ({ company: 'Acme' }) };
   assert.equal(exclusionReason(jobRecord(), opts), 'blacklisted');
+});
+
+test('dependency-free blacklist parser enforces company and domain entries', () => {
+  const entries = parseIntegrationBlacklist([
+    '| Company | Since | Scope | Reason |',
+    '|---|---|---|---|',
+    '| Acme Corp. | 2026-01-01 | company | user decision |',
+    '| linkedin.com | 2026-01-02 | domain | blocked host |',
+  ].join('\n'));
+  const match = integrationBlacklistMatcher(entries);
+  assert.equal(match('acme corp', 'https://example.com/jobs/1')?.reason, 'user decision');
+  assert.equal(match('Other', 'https://www.linkedin.com/jobs/view/1')?.reason, 'blocked host');
 });
 
 test('an invalid LinkedIn URL is excluded', () => {
@@ -170,6 +192,7 @@ test('a row that would build an invalid job is skipped, not fatal', () => {
 test('runExport rejects an unsupported source and a non-numeric min-score', async () => {
   await assert.rejects(runExport(['--source', 'indeed', '--dry-run']), /unsupported --source/);
   await assert.rejects(runExport(['--min-score', 'abc', '--dry-run']), /min-score must be a number/);
+  await assert.rejects(runExport(['--min-score', '4oops', '--dry-run']), /min-score must be a number/);
 });
 
 test('the produced queue validates against approved-jobs.v1', () => {
@@ -204,7 +227,10 @@ test('buildApprovedJob carries the artifact hashes through (Phase 6)', () => {
 });
 
 test('buildApprovedJob defaults missing hashes to null', () => {
-  const built = buildApprovedJob(jobRecord(), { source: 'linkedin', generatedAt: NOW });
+  const built = buildApprovedJob(
+    jobRecord({ resumeSha256: null, coverLetterSha256: null }),
+    { source: 'linkedin', generatedAt: NOW },
+  );
   assert.equal(built.resume_sha256, null);
   assert.equal(built.cover_letter_sha256, null);
 });
