@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<!-- career-ops-template
+name: Kondabala Resume
+version: 1.0.0
+sections: experience, education, skills
+-->
+<!--
+  ── Kondabala Resume ────────────────────────────────────────────────────────
+  A reproduction of the candidate's OWN resume (the source .docx),
+  not a design. Every measurement below is converted from that file's OOXML, so
+  a tailored CV is the same document with different words in the bullets — which
+  is the whole point: a candidate who has iterated on their resume for years
+  should not get a different-looking one back because the content was tailored.
+
+  Source measurements (twips → pt, 20tw = 1pt; the docx's own values in
+  comments beside each rule so a future edit can be checked against the file):
+
+    page      Letter, margins top/bottom 864tw = 0.6in, left 581tw = 0.40in,
+              right 524tw = 0.36in — deliberately asymmetric, as in the docx
+    body      Calibri 10pt (w:sz 20), line 240tw = single
+    name      bold 18pt (w:sz 36), centred
+    contact   11pt (w:sz 22), centred, "phone • email" — NO location, NO
+              LinkedIn: the docx header carries neither
+    heading   Heading1 → Calibri bold 12pt (docDefaults w:sz 24) in #5B9BD4,
+              before 60tw = 3pt, then a 2pt spacer paragraph
+    role line bold, dates pushed to a right tab stop at 11059tw
+    company   italic, location pushed to the same right tab stop
+    group     italic, indent 134tw ≈ 6.7pt ("Client: Acme")
+    bullets   indent 844tw = 42.2pt, hanging 360tw = 18pt, after 40tw = 2pt
+
+  SECTION ORDER IS THE DOCX'S, NOT THE MODE'S DEFAULT: Summary → Work
+  Experience → Skills → Education. `modes/pdf.md`'s "6-second scan" order puts
+  Skills last and Education before it; this candidate's resume does the
+  opposite, and the resume wins. Certifications are a Skills line here (as in
+  the docx), so the payload carries them as a `skills[]` category and the
+  `certifications` block is absent on purpose.
+
+  Core Competencies and Projects have no block either: the source resume has no
+  such sections, and adding them is what makes a tailored CV look generated.
+
+  ATS discipline matches templates/cv-template.html and is not negotiable:
+  single column, no tables, no absolute positioning, Calibri (named in
+  verify-ats.mjs's safe list), ligatures off so headless Chromium does not emit
+  U+FB01/FB02 into the extracted text, and the right-aligned dates come from
+  flexbox — DOM order stays role → company → bullets.
+-->
+<html lang="{{LANG}}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{NAME}} — CV</title>
+<style>
+  :root {
+    /* Calibri first, then the metric-compatible substitutes a Linux CI box and
+       headless Chromium actually have, so the line breaks stay put off-Mac. */
+    --font-family: Calibri, Carlito, "Liberation Sans", "Helvetica Neue", Arial, sans-serif;
+    --font-size: 10pt;              /* docx w:sz 20 */
+    --accent-color: #5B9BD4;        /* docx Heading1 w:color */
+    --text-color: #000000;          /* docx Normal w:color */
+    /* top/bottom 864tw, right 524tw, left 581tw — asymmetric, as in the docx.
+       generate-pdf.mjs injects `@page { margin: var(--page-margin) }` last, so
+       this one declaration sets both the on-screen body and the printed sheet. */
+    --page-margin: 0.6in 0.36in 0.6in 0.40in;
+    /* The docx keeps a role's header with its first bullet (w:keepNext on
+       Heading1) but lets a long role flow across a page; same here. */
+    --job-break-inside: auto;
+  }
+  @page { margin: var(--page-margin); }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+  }
+
+  body {
+    font-family: var(--font-family);
+    font-size: var(--font-size);
+    line-height: 1.2;               /* docx w:line 240 auto = single */
+    color: var(--text-color);
+    /* Headless Chromium otherwise emits U+FB01/U+FB02 for fi/fl, which lands
+       in the PDF's extracted text and corrupts ATS keyword matching. */
+    font-variant-ligatures: none;
+    -webkit-font-feature-settings: "liga" 0, "clig" 0;
+    font-feature-settings: "liga" 0, "clig" 0;
+  }
+
+  .page {
+    max-width: {{PAGE_WIDTH}};
+    margin: 0 auto;
+    padding: var(--page-margin);
+  }
+  /* The sheet already carries the margin in print, so the body must not add it
+     a second time — on screen it is the page, in print it is the @page rule. */
+  @media print {
+    .page { padding: 0; max-width: none; }
+  }
+
+  /* ── Header ──────────────────────────────────────────────────────────────
+     Name 18pt bold centred; contact 11pt centred. The docx separates phone and
+     email with "•" and carries nothing else — no location line, no LinkedIn. */
+  .header { text-align: center; }
+
+  .header h1 {
+    font-size: 18pt;                /* docx w:sz 36 */
+    font-weight: bold;
+    margin: 0;
+    line-height: 1.2;
+    letter-spacing: 0;
+  }
+
+  .header .cv-title {
+    font-size: 11pt;
+    margin: 1pt 0 0;
+  }
+
+  .contact-row {
+    font-size: 11pt;                /* docx w:sz 22 */
+    margin: 0;
+    line-height: 1.2;
+  }
+  .contact-row a {
+    color: var(--text-color);
+    text-decoration: none;
+  }
+  /* "•" between items, exactly as the docx types it, and nothing after the
+     last — so an omitted phone or portfolio leaves no orphan separator. */
+  .contact-row > *:not(:last-child)::after {
+    content: " • ";
+    white-space: pre;
+  }
+
+  /* ── Sections ────────────────────────────────────────────────────────────
+     Heading1: bold 12pt accent, uppercase as typed in the docx. The docx puts
+     a 2pt spacer paragraph under every heading; margin-bottom does that job. */
+  .section { margin-top: 3pt; }     /* docx w:before 60 */
+
+  /* Skills and Education are short, fixed blocks: splitting either one leaves a
+     heading with two bullets under it at the foot of a page while the next page
+     runs half empty. Work Experience is the only section long enough that
+     keeping it whole would cost more than it saves, so it is not in this list. */
+  .section-skills,
+  .section-education {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .section-title {
+    font-size: 12pt;                /* docDefaults w:sz 24 */
+    font-weight: bold;
+    color: var(--accent-color);
+    text-transform: uppercase;
+    margin: 0 0 2pt;                /* docx w:after 6 + 2pt spacer paragraph */
+    /* A heading must never be the last thing on a page. */
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .summary-text {
+    margin: 0;
+    text-align: left;
+  }
+
+  /* ── Work experience ─────────────────────────────────────────────────────
+     Two header lines, each a flex row whose second child is pushed right —
+     the CSS equivalent of the docx's right tab stop at 11059tw. Flex changes
+     no DOM order, so an ATS still reads role, then company, then bullets. */
+  .job {
+    margin-top: 6pt;                /* docx w:before 120 */
+    break-inside: var(--job-break-inside);
+    page-break-inside: var(--job-break-inside);
+  }
+
+  .job-header,
+  .job-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12pt;
+  }
+
+  .job-header {
+    margin-bottom: 3pt;             /* docx w:after 60 */
+    /* Keep the role with the company line and its first bullets. */
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .job-role { font-weight: bold; }
+  .job-period { font-weight: normal; white-space: nowrap; }
+
+  .job-meta {
+    margin-bottom: 4pt;             /* docx w:after 80 */
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .job-company { font-style: italic; }
+  .job-location { font-style: italic; white-space: nowrap; }
+
+  /* An un-bulleted background line under the company, when the payload carries
+     one. The docx has none, so this only ever appears if `context` is set. */
+  .job-context {
+    font-style: italic;
+    margin: 0 0 3pt;
+  }
+
+  /* "Client: Acme" — the docx indents these 134tw ≈ 6.7pt and italicises
+     them. This is what `experience[].groups[].label` renders as. */
+  .job-group {
+    font-style: italic;
+    margin: 2pt 0 1pt 6.7pt;        /* docx w:before 40, w:ind left 134 */
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* docx list: left 844tw = 42.2pt, hanging 360tw = 18pt → the bullet glyph
+     sits at 24.2pt and the text at 42.2pt. */
+  .job ul,
+  .skills-list {
+    margin: 0;
+    padding-left: 42.2pt;
+    list-style-position: outside;
+  }
+
+  .job li,
+  .skills-list li {
+    margin-bottom: 2pt;             /* docx w:after 40 */
+    padding-left: 0;
+  }
+
+  /* ── Skills ──────────────────────────────────────────────────────────────
+     Bulleted lines with a bold category label, exactly as the docx types them
+     (including the Certifications line, which lives in Skills there). */
+  .skill-category { font-weight: bold; }
+
+  /* ── Education ───────────────────────────────────────────────────────────
+     Institution bold with the location pushed right; the degree italic with
+     the years pushed right. Note this is the INVERSE of the experience block,
+     where the bold line is the role — reproduced from the docx, not unified. */
+  .edu-item {
+    margin-top: 8pt;                /* docx w:before 160 */
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .edu-header,
+  .edu-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12pt;
+  }
+
+  .edu-header { margin-bottom: 2pt; }   /* docx w:after 40 */
+  .edu-org { font-weight: bold; }
+  .edu-location { white-space: nowrap; }
+
+  .edu-title { font-style: italic; }
+  .edu-year { font-style: italic; white-space: nowrap; }
+
+  /* Italic so an honour reads as part of the degree line above it, which is
+     where the docx types it — "(Graduate Incentive Award)" inside the degree.
+     It cannot go there verbatim: verify-cv-facts.mjs matches a degree string
+     against cv.md whole, and the parenthetical makes it match nothing. */
+  .edu-desc {
+    font-style: italic;
+    margin-top: 1pt;
+  }
+
+  /* Bold emphasis inside a bullet (`**…**` in the payload) must not look like
+     a second weight of its own next to the bold header lines. */
+  strong { font-weight: bold; }
+
+  .cv-consent {
+    margin-top: 8pt;
+    font-size: 8pt;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>{{NAME}}</h1>
+    {{TITLE_BLOCK}}
+    <div class="contact-row">
+      <a href="tel:{{PHONE}}">{{PHONE}}</a>
+      <a href="mailto:{{EMAIL}}">{{EMAIL}}</a>
+      <a href="{{LINKEDIN_URL}}">{{LINKEDIN_DISPLAY}}</a>
+      <a href="{{PORTFOLIO_URL}}">{{PORTFOLIO_DISPLAY}}</a>
+    </div>
+  </div>
+
+  <!-- PROFESSIONAL SUMMARY -->
+  <div class="section">
+    <div class="section-title">{{SECTION_SUMMARY}}</div>
+    <div class="summary-text">{{SUMMARY_TEXT}}</div>
+  </div>
+
+  <!-- WORK EXPERIENCE -->
+  <div class="section">
+    <div class="section-title">{{SECTION_EXPERIENCE}}</div>
+    {{EXPERIENCE}}
+  </div>
+
+  <!-- Carries the Certifications line, as the source resume does.
+       The marker below must stay bare: cv-sections-core.mjs finds a section to
+       strip by matching the comment whole, so a note written inside the marker
+       makes an empty Skills section un-strippable. Keep notes in their own
+       comment like this one, and never write a comment-closing sequence inside
+       one: it ends the comment early and the rest lands in the document as
+       visible text. -->
+  <!-- SKILLS -->
+  <div class="section section-skills">
+    <div class="section-title">{{SECTION_SKILLS}}</div>
+    <ul class="skills-list">
+      {{SKILLS}}
+    </ul>
+  </div>
+
+  <!-- EDUCATION -->
+  <div class="section section-education">
+    <div class="section-title">{{SECTION_EDUCATION}}</div>
+    {{EDUCATION}}
+  </div>
+
+  <!-- END -->
+
+  <!-- GDPR / RODO consent -->
+  <div class="cv-consent">{{CONSENT}}</div>
+
+</div>
+</body>
+</html>

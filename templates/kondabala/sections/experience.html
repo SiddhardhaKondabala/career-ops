@@ -1,0 +1,39 @@
+<!--
+  experience.html — Kondabala Resume pack.
+
+  Two header lines, in the source resume's order:
+
+    line 1   ROLE (bold)      …right-aligned…   PERIOD
+    line 2   COMPANY (italic) …right-aligned…   LOCATION
+
+  Note ROLE comes FIRST. The shipped partial puts the company first; this
+  resume puts the title first, and the resume is what this pack reproduces.
+
+  BODY, not BULLETS: this candidate's experience groups bullets under client
+  sub-headings ("Client: Acme"), and a label sits BETWEEN lists, so it
+  cannot live inside one <ul>. BODY emits its own <ul> tags — never wrap it.
+
+  Field placeholders filled per entry:
+    ROLE             — job title
+    PERIOD           — date range
+    COMPANY          — employer name
+    BODY             — ungrouped bullets, then one label + <ul> per group
+    LOCATION_BLOCK   — conditional: .job-location when location present
+    CONTEXT_BLOCK    — conditional: .job-context (un-bulleted background line)
+-->
+<!--ENTRY-->
+<div class="job">
+  <div class="job-header">
+    <span class="job-role">{{ROLE}}</span>
+    <span class="job-period">{{PERIOD}}</span>
+  </div>
+  <div class="job-meta">
+    <span class="job-company">{{COMPANY}}</span>
+    {{LOCATION_BLOCK}}
+  </div>
+  {{CONTEXT_BLOCK}}
+{{BODY}}
+</div>
+<!--LOCATION_BLOCK--><span class="job-location">{{LOCATION}}</span><!--/LOCATION_BLOCK-->
+<!--CONTEXT_BLOCK--><div class="job-context">{{CONTEXT}}</div><!--/CONTEXT_BLOCK-->
+<!--/ENTRY-->

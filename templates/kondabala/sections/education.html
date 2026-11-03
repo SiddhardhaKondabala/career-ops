@@ -1,0 +1,39 @@
+<!--
+  education.html — Kondabala Resume pack.
+
+  Two lines per entry, in the source resume's order:
+
+    line 1   ORG (bold)     …right-aligned…   LOCATION
+    line 2   TITLE (italic) …right-aligned…   YEAR
+
+  The INSTITUTION is bold here and the degree italic — the inverse of the
+  shipped partial, which leads with the degree. Reproduced from the docx.
+
+  Qualifiers belong inside TITLE as the resume types them: "Master of Business
+  Administration, Information Technology (In Progress)", "Master of Science,
+  Business Analytics (Graduate Incentive Award)". DESC is therefore unused by
+  this candidate's payload, but kept so the partial stays complete.
+
+  Field placeholders filled per entry:
+    TITLE          — degree
+    ORG_BLOCK      — conditional: .edu-org when org is present
+    LOCATION_BLOCK — conditional: .edu-location when location present
+    YEAR           — years (empty string when absent)
+    DESC_BLOCK     — conditional: .edu-desc when description is present
+-->
+<!--ENTRY-->
+<div class="edu-item">
+  <div class="edu-header">
+    {{ORG_BLOCK}}
+    {{LOCATION_BLOCK}}
+  </div>
+  <div class="edu-meta">
+    <span class="edu-title">{{TITLE}}</span>
+    <span class="edu-year">{{YEAR}}</span>
+  </div>
+  {{DESC_BLOCK}}
+</div>
+<!--ORG_BLOCK--><span class="edu-org">{{ORG}}</span><!--/ORG_BLOCK-->
+<!--LOCATION_BLOCK--><span class="edu-location">{{LOCATION}}</span><!--/LOCATION_BLOCK-->
+<!--DESC_BLOCK--><div class="edu-desc">{{DESC}}</div><!--/DESC_BLOCK-->
+<!--/ENTRY-->

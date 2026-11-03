@@ -1,0 +1,19 @@
+<!--
+  skills.html — Kondabala Resume pack.
+
+  One BULLET per category, with a bold label: the source resume types Skills as
+  a bulleted list, not as free-standing lines, and the template wraps {{SKILLS}}
+  in a <ul class="skills-list"> for exactly that reason.
+
+  The resume's last Skills bullet is "Certifications: …", so the payload carries
+  certifications as one more `skills[]` category and the template has no
+  Certifications block at all. That is the resume's own structure, not a loss.
+
+  Field placeholders filled per category:
+    CATEGORY_BLOCK — conditional: bold label span when category is present
+    ITEMS_TEXT     — comma-joined items string
+-->
+<!--ENTRY-->
+<li class="skill-item">{{CATEGORY_BLOCK}}{{ITEMS_TEXT}}</li>
+<!--CATEGORY_BLOCK--><span class="skill-category">{{CATEGORY}}: </span><!--/CATEGORY_BLOCK-->
+<!--/ENTRY-->
