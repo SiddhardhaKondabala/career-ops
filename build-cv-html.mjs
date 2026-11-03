@@ -419,13 +419,50 @@ function buildCompetencies(entries, partial) {
     .join('\n      ');
 }
 
+// Every bullet of an entry as <li> tags, grouped ones included, in reading
+// order. This is what {{BULLETS}} carries, so a partial written before grouped
+// bullets existed (the shipped templates/sections/experience.html among them)
+// still renders the whole role — it loses the group labels, never a bullet.
+function experienceBullets(entry, indent) {
+  const pad = ' '.repeat(indent);
+  const flat = [
+    ...(Array.isArray(entry.bullets) ? entry.bullets : []),
+    ...(Array.isArray(entry.groups) ? entry.groups : [])
+      .filter(g => g && typeof g === 'object')
+      .flatMap(g => (Array.isArray(g.bullets) ? g.bullets : [])),
+  ];
+  return flat.filter(Boolean).map(b => `${pad}<li>${escapeHtml(b)}</li>`).join('\n');
+}
+
+// The body of one role: the ungrouped bullets, then one labelled run per group.
+// {{BODY}} owns its own <ul> tags, because a group label sits between lists and
+// cannot be expressed inside the single <ul> that wraps {{BULLETS}}.
+function experienceBody(entry, indent) {
+  const pad = ' '.repeat(indent);
+  const list = (bullets) => {
+    const items = bullets.filter(Boolean)
+      .map(b => `${pad}  <li>${escapeHtml(b)}</li>`).join('\n');
+    return items ? `${pad}<ul>\n${items}\n${pad}</ul>` : '';
+  };
+  const blocks = [];
+  if (Array.isArray(entry.bullets)) {
+    const ungrouped = list(entry.bullets);
+    if (ungrouped) blocks.push(ungrouped);
+  }
+  for (const group of Array.isArray(entry.groups) ? entry.groups : []) {
+    if (!group || typeof group !== 'object') continue;
+    const items = list(Array.isArray(group.bullets) ? group.bullets : []);
+    if (!items) continue;
+    blocks.push(`${pad}<div class="job-group">${escapeHtml(String(group.label ?? ''))}</div>\n${items}`);
+  }
+  return blocks.join('\n');
+}
+
 function buildExperience(entries, partial) {
   if (!Array.isArray(entries) || entries.length === 0) return '';
   if (!partial) {
     return entries.filter(e => hasRequiredFields(e, 'experience', 'html')).map(e => {
-      const bullets = Array.isArray(e.bullets)
-        ? e.bullets.filter(Boolean).map(b => `        <li>${escapeHtml(b)}</li>`).join('\n')
-        : '';
+      const body = experienceBody(e, 4);
       const location = e.location
         ? `\n    <div class="job-location">${escapeHtml(e.location)}</div>`
         : '';
@@ -438,18 +475,14 @@ function buildExperience(entries, partial) {
       <span class="job-period">${escapeHtml(e.dates || e.period || '')}</span>
     </div>
     <div class="job-role">${escapeHtml(e.role)}</div>${context}${location}
-    <ul>
-${bullets}
-    </ul>
+${body}
   </div>`;
     }).join('\n  ');
   }
 
   const { entryTemplate, blocks } = partial;
   return entries.filter(e => hasRequiredFields(e, 'experience', 'html')).map(e => {
-    const bullets = Array.isArray(e.bullets)
-      ? e.bullets.filter(Boolean).map(b => `<li>${escapeHtml(b)}</li>`).join('\n    ')
-      : '';
+    const bullets = experienceBullets(e, 0).split('\n').join('\n    ');
     const blockValues = new Map([
       ['LOCATION_BLOCK', { value: escapeHtml(e.location || ''), present: Boolean(e.location) }],
       ['CONTEXT_BLOCK', { value: escapeHtml(e.context || ''), present: Boolean(e.context) }],
@@ -461,6 +494,7 @@ ${bullets}
       LOCATION: escapeHtml(e.location || ''),
       CONTEXT: escapeHtml(e.context || ''),
       BULLETS: bullets,
+      BODY: experienceBody(e, 4),
     }, blockValues);
   }).join('\n  ');
 }
@@ -812,9 +846,17 @@ function renderHtml(template, payload, templatePath) {
 // {institution, degree, dates, coursework}), and keeping both tables in one
 // place is what lets each reject the other's vocabulary by name (#3523).
 
+// Grouped bullets count too: they are bullets in the document, and a report
+// that counted only `bullets[]` said "4" for a CV carrying 13 — which reads as
+// a CV that silently lost most of its content.
 function countBullets(payload) {
   const ex = Array.isArray(payload.experience)
-    ? payload.experience.flatMap(e => (Array.isArray(e?.bullets) ? e.bullets : []))
+    ? payload.experience.flatMap(e => [
+      ...(Array.isArray(e?.bullets) ? e.bullets : []),
+      ...(Array.isArray(e?.groups) ? e.groups : [])
+        .filter(g => g && typeof g === 'object')
+        .flatMap(g => (Array.isArray(g.bullets) ? g.bullets : [])),
+    ])
     : [];
   return ex.length;
 }

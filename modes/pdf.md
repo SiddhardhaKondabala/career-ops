@@ -211,6 +211,15 @@ Write a JSON file with this structure, then run `node build-cv-html.mjs <input.j
       "context": "Early-stage startup, ~40 people; acquired by BigCo in 2023.",
       "dates": "June 2022 - Present",
       "bullets": ["Achievement bullet with JD keywords injected", "Another quantified-impact bullet"]
+    },
+    {
+      "company": "Consultancy Ltd",
+      "role": "Consultant",
+      "dates": "Aug 2022 - Present",
+      "groups": [
+        { "label": "Client: Alpha", "bullets": ["Bullet from the Alpha engagement"] },
+        { "label": "Client: Beta", "bullets": ["Bullet from the Beta engagement"] }
+      ]
     }
   ],
   "projects": [
@@ -253,6 +262,7 @@ Write a JSON file with this structure, then run `node build-cv-html.mjs <input.j
 | `summary` | string | Personalized summary with keywords. Supports `**…**` emphasis (see **Markdown bold** below). |
 | `competencies` | string[] | 6-8 keyword phrases → competency tags. |
 | `experience[]` | object | `company`, `role`, `location` (optional), `context` (optional), `dates`, `bullets` (reordered, keyword-injected; `**…**` emphasis supported). `context` is an un-bulleted italic line rendered directly under the role, for one line of background about the company (stage, size, an acquisition), not an achievement. Use only facts already in `cv.md`: when it states none for that role, omit `context` rather than write one. Keep it short; keep achievements in `bullets`. Optional section — omit the key or pass `[]` and the whole block is dropped, header included. Only for candidates with no professional history to list (students, new graduates, career changers); never drop it to hide a gap. |
+| `experience[].groups` | array | Optional. Labelled bullet runs **inside one role**: `[{label, bullets}]`, where `label` is the sub-heading (`"Client: Alpha"`) and `bullets` follows the same rules as the entry's own. For a consultant, agency employee or contractor who holds one title at one employer while the work splits by client — exactly when `cv.md` already carries those sub-headings. Use it instead of the two workarounds that damage the document: one entry per client invents three jobs where the CV has one, and folding the client name into each bullet (`"Alpha: Built …"`) rewrites the candidate's own sentences. `bullets` and `groups` may coexist; ungrouped work renders first. Rendered through `{{BODY}}`, which owns its `<ul>` tags because a label sits *between* lists — a partial that wraps `{{BULLETS}}` in one `<ul>` still renders every bullet but shows no labels, so a template pack meant for grouped CVs must use `{{BODY}}`. A malformed `groups` (not an array, a group with no label, a group with no renderable bullets) **fails the render by name** rather than writing a CV that is quietly short. |
 | `projects[]` | object | `name`, `url` (optional project/repo link), `badge` (optional), `tech` (optional), `description` (a `bullets` array is also accepted and joined into the description line). |
 | `education[]` | object | `title` (degree), `org` (institution), `location` (optional, city/state), `year`, `description` (optional). |
 | `certifications[]` | object | `title`, `org`, `year`. |

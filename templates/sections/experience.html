@@ -5,7 +5,16 @@
     COMPANY          — employer name
     PERIOD           — date range
     ROLE             — job title
-    BULLETS          — rendered <li> tags
+    BULLETS          — rendered <li> tags, WITHOUT their <ul> wrapper. Carries
+                       every bullet of the entry, grouped ones flattened in, so
+                       a partial using it never loses content — only the group
+                       labels, which have nowhere to go inside one <ul>.
+    BODY             — the whole body of the role INCLUDING its <ul> tags: the
+                       ungrouped bullets, then one `.job-group` label + <ul>
+                       per `experience[].groups` entry. Use this instead of
+                       BULLETS in a pack for CVs that group bullets by client
+                       or engagement; a label sits between lists, which BULLETS
+                       cannot express. Do not wrap it in a <ul> of your own.
     LOCATION_BLOCK   — conditional: .job-location div when location present; omitted when absent
     CONTEXT_BLOCK    — conditional: .job-context div (un-bulleted company/scope note) when context present; omitted when absent
 
