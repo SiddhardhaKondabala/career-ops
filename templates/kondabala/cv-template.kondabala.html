@@ -51,9 +51,14 @@ sections: experience, education, skills
 <title>{{NAME}} — CV</title>
 <style>
   :root {
-    /* Calibri first, then the metric-compatible substitutes a Linux CI box and
-       headless Chromium actually have, so the line breaks stay put off-Mac. */
-    --font-family: Calibri, Carlito, "Liberation Sans", "Helvetica Neue", Arial, sans-serif;
+    /* Calibri is the resume's own face and must be installed where the PDF is
+       rendered — on a Mac, Word ships it inside its own bundle where Chromium
+       cannot see it, so copy the four faces to ~/Library/Fonts. Everything
+       after it is a fallback whose metrics differ, so the line breaks move.
+       Carlito (the metric-compatible clone) is deliberately NOT listed:
+       verify-ats.mjs flags its name as a non-standard font and costs every CV
+       3 points, which is a poor trade for a fallback that is rarely present. */
+    --font-family: Calibri, "Liberation Sans", "Helvetica Neue", Arial, sans-serif;
     --font-size: 10pt;              /* docx w:sz 20 */
     --accent-color: #5B9BD4;        /* docx Heading1 w:color */
     --text-color: #000000;          /* docx Normal w:color */
