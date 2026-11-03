@@ -64,6 +64,12 @@ sections: experience, education, skills
     /* The docx keeps a role's header with its first bullet (w:keepNext on
        Heading1) but lets a long role flow across a page; same here. */
     --job-break-inside: auto;
+    /* No Projects block exists below, but this template is still held to the
+       project break rules and must declare this token: a pack that ships no
+       sections/projects.html falls through to the built-in builder, which
+       emits .project markup regardless. Declared `auto` to match every
+       template but resume-template.html. */
+    --project-break-inside: auto;
   }
   @page { margin: var(--page-margin); }
 
@@ -268,6 +274,30 @@ sections: experience, education, skills
   .edu-desc {
     font-style: italic;
     margin-top: 1pt;
+  }
+
+  /* ── Projects ────────────────────────────────────────────────────────────
+     The source resume has no Projects section and the body below has no
+     {{PROJECTS}} slot, so none of this renders today. It is here because the
+     markup is not this template's to opt out of: with no sections/projects.html
+     in this pack, build-cv-html.mjs's built-in builder owns those classes, and
+     a payload carrying `projects` would emit them unstyled. Keeping the rules
+     means that, if a Projects block is ever added here, a bare tech line
+     cannot land alone at the top of a page and a title cannot be orphaned at
+     the foot of one. */
+  .project {
+    break-inside: var(--project-break-inside);
+    page-break-inside: var(--project-break-inside);
+  }
+
+  .project-title {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .project-tech {
+    break-before: avoid;
+    page-break-before: avoid;
   }
 
   /* Bold emphasis inside a bullet (`**…**` in the payload) must not look like

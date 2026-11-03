@@ -232,6 +232,7 @@ try {
       'templates/cv-template.zh-minimal.html': false,
       'templates/resume-template.html': false,
       'templates/ats/cv-template.ats.html': true,
+      'templates/kondabala/cv-template.kondabala.html': true,
     };
     // [effective default, declared on :root]
     const withDefaults = (defaults) => Object.fromEntries(
