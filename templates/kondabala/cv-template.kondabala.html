@@ -173,10 +173,13 @@ sections: experience, education, skills
      Two header lines, each a flex row whose second child is pushed right —
      the CSS equivalent of the docx's right tab stop at 11059tw. Flex changes
      no DOM order, so an ATS still reads role, then company, then bullets. */
+  /* #3242: opt-in — see the --job-break-inside default above. The legacy
+     page-break-inside alias comes first and both carry the `auto` fallback;
+     tests/theme-style.test.mjs holds every template to that exact shape. */
   .job {
     margin-top: 6pt;                /* docx w:before 120 */
-    break-inside: var(--job-break-inside);
-    page-break-inside: var(--job-break-inside);
+    page-break-inside: var(--job-break-inside, auto);
+    break-inside: var(--job-break-inside, auto);
   }
 
   .job-header,
@@ -286,8 +289,8 @@ sections: experience, education, skills
      cannot land alone at the top of a page and a title cannot be orphaned at
      the foot of one. */
   .project {
-    break-inside: var(--project-break-inside);
-    page-break-inside: var(--project-break-inside);
+    page-break-inside: var(--project-break-inside, auto);
+    break-inside: var(--project-break-inside, auto);
   }
 
   .project-title {
